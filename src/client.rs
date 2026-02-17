@@ -433,6 +433,19 @@ impl ObsClient {
             .await
             .map_err(Self::convert_s3_error)?;
 
+        // rust-s3 may return a successful response with 404 status code
+        let status = response.status_code();
+        if status == 404 {
+            return Err(ObsError::NotFound(format!("Object not found: {}", key)));
+        }
+        if status >= 400 {
+            return Err(ObsError::S3Error(format!(
+                "Download failed with status {}: {}",
+                status,
+                String::from_utf8_lossy(response.bytes())
+            )));
+        }
+
         Ok(Bytes::from(response.bytes().to_vec()))
     }
 
@@ -471,9 +484,24 @@ impl ObsClient {
         let bucket = self.get_bucket(bucket)?;
 
         match bucket.head_object(key).await {
-            Ok(_) => Ok(true),
+            Ok((_head, status)) => {
+                if status == 404 {
+                    Ok(false)
+                } else if (200..300).contains(&status) {
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            }
             Err(S3Error::HttpFailWithBody(404, _)) => Ok(false),
-            Err(e) => Err(Self::convert_s3_error(e)),
+            Err(e) => {
+                let err_str = e.to_string();
+                if err_str.contains("404") || err_str.contains("NotFound") || err_str.contains("NoSuchKey") {
+                    Ok(false)
+                } else {
+                    Err(Self::convert_s3_error(e))
+                }
+            }
         }
     }
 
@@ -807,10 +835,21 @@ impl ObsClient {
             .build()
             .expect("valid lifecycle configuration");
 
+        use base64::Engine;
+        use md5::{Digest, Md5};
+
         client
             .put_bucket_lifecycle_configuration()
             .bucket(bucket_name)
             .lifecycle_configuration(config)
+            .customize()
+            .mutate_request(|req| {
+                if let Some(body_bytes) = req.body().bytes() {
+                    let digest = Md5::digest(body_bytes);
+                    let md5_b64 = base64::engine::general_purpose::STANDARD.encode(digest);
+                    req.headers_mut().insert("content-md5", md5_b64);
+                }
+            })
             .send()
             .await
             .map_err(|e| ObsError::S3Error(format!("Failed to set lifecycle rules: {:?}", e)))?;
