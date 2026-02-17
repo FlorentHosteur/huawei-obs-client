@@ -3,10 +3,11 @@
 //! Run with:
 //! ```bash
 //! OBS_ACCESS_KEY=... OBS_SECRET_KEY=... OBS_ENDPOINT=https://obj.hosteur.io \
-//!   OBS_BUCKET=hst-test-api-bk01 cargo test --test integration -- --test-threads=1
+//!   OBS_BUCKET=hst-test-api-bk01 cargo test --test integration -- --ignored --test-threads=1
 //! ```
 //!
 //! Tests run sequentially (--test-threads=1) to avoid conflicts on shared bucket.
+//! Live tests are marked `#[ignore]` so `cargo test` passes without credentials.
 
 use huawei_obs_client::*;
 use std::time::Duration;
@@ -184,6 +185,7 @@ fn test_error_display() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
+#[ignore]
 async fn test_list_buckets() {
     let client = get_client();
     let buckets = client.list_buckets().await.expect("list_buckets failed");
@@ -200,6 +202,7 @@ async fn test_list_buckets() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_bucket_exists_true() {
     let client = get_client();
     let exists = client
@@ -210,6 +213,7 @@ async fn test_bucket_exists_true() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_bucket_exists_false() {
     let client = get_client();
     let exists = client
@@ -220,6 +224,7 @@ async fn test_bucket_exists_false() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_create_and_delete_bucket() {
     let client = get_client();
     let ts = std::time::SystemTime::now()
@@ -253,6 +258,7 @@ async fn test_create_and_delete_bucket() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_delete_nonexistent_bucket() {
     let client = get_client();
     let result = client.delete_bucket("nonexistent-bucket-xyzzy-99999").await;
@@ -264,6 +270,7 @@ async fn test_delete_nonexistent_bucket() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
+#[ignore]
 async fn test_upload_and_download_object() {
     let client = get_client();
     let bucket = test_bucket();
@@ -289,6 +296,7 @@ async fn test_upload_and_download_object() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_upload_with_content_type() {
     let client = get_client();
     let bucket = test_bucket();
@@ -323,6 +331,7 @@ async fn test_upload_with_content_type() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_upload_stream() {
     let client = get_client();
     let bucket = test_bucket();
@@ -347,6 +356,7 @@ async fn test_upload_stream() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_download_nonexistent_object() {
     let client = get_client();
     let result = client
@@ -356,6 +366,7 @@ async fn test_download_nonexistent_object() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_object_exists() {
     let client = get_client();
     let bucket = test_bucket();
@@ -387,6 +398,7 @@ async fn test_object_exists() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_get_object_metadata() {
     let client = get_client();
     let bucket = test_bucket();
@@ -420,6 +432,7 @@ async fn test_get_object_metadata() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_delete_object() {
     let client = get_client();
     let bucket = test_bucket();
@@ -447,6 +460,7 @@ async fn test_delete_object() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_delete_objects_batch() {
     let client = get_client();
     let bucket = test_bucket();
@@ -482,6 +496,7 @@ async fn test_delete_objects_batch() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_list_objects() {
     let client = get_client();
     let bucket = test_bucket();
@@ -522,6 +537,7 @@ async fn test_list_objects() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_list_objects_with_delimiter() {
     let client = get_client();
     let bucket = test_bucket();
@@ -571,6 +587,7 @@ async fn test_list_objects_with_delimiter() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_copy_object_same_bucket() {
     let client = get_client();
     let bucket = test_bucket();
@@ -604,6 +621,7 @@ async fn test_copy_object_same_bucket() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_upload_empty_object() {
     let client = get_client();
     let bucket = test_bucket();
@@ -631,6 +649,7 @@ async fn test_upload_empty_object() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_upload_large_object() {
     let client = get_client();
     let bucket = test_bucket();
@@ -660,6 +679,7 @@ async fn test_upload_large_object() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
+#[ignore]
 async fn test_presign_get() {
     let client = get_client();
     let bucket = test_bucket();
@@ -695,6 +715,7 @@ async fn test_presign_get() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_presign_put() {
     let client = get_client();
     let bucket = test_bucket();
@@ -737,6 +758,7 @@ async fn test_presign_put() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
+#[ignore]
 async fn test_cors_crud() {
     let client = get_client();
     let bucket = test_bucket();
@@ -800,6 +822,7 @@ async fn test_cors_crud() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_cors_multiple_rules() {
     let client = get_client();
     let bucket = test_bucket();
@@ -845,6 +868,7 @@ async fn test_cors_multiple_rules() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
+#[ignore]
 async fn test_lifecycle_crud() {
     let client = get_client();
     let bucket = test_bucket();
@@ -910,6 +934,7 @@ async fn test_lifecycle_crud() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_lifecycle_with_tags() {
     let client = get_client();
     let bucket = test_bucket();
@@ -960,6 +985,7 @@ async fn test_lifecycle_with_tags() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
+#[ignore]
 async fn test_policy_crud() {
     let client = get_client();
     let bucket = test_bucket();
@@ -1042,6 +1068,7 @@ async fn test_policy_crud() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
+#[ignore]
 async fn test_list_objects_empty_prefix() {
     let client = get_client();
     let bucket = test_bucket();
@@ -1061,6 +1088,7 @@ async fn test_list_objects_empty_prefix() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_list_objects_special_characters() {
     let client = get_client();
     let bucket = test_bucket();
@@ -1093,6 +1121,7 @@ async fn test_list_objects_special_characters() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
+#[ignore]
 async fn test_delete_cors_idempotent() {
     let client = get_client();
     let bucket = test_bucket();
@@ -1104,6 +1133,7 @@ async fn test_delete_cors_idempotent() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_delete_lifecycle_idempotent() {
     let client = get_client();
     let bucket = test_bucket();
@@ -1117,6 +1147,7 @@ async fn test_delete_lifecycle_idempotent() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_delete_policy_idempotent() {
     let client = get_client();
     let bucket = test_bucket();
