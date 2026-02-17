@@ -1,0 +1,40 @@
+[package]
+name = "huawei-obs-client"
+version = "0.1.0"
+edition = "2021"
+authors = ["Hosteur Team"]
+description = "Rust client library for Huawei OBS (Object Storage Service), S3-compatible"
+license = "MIT"
+repository = "https://github.com/hosteur-sa-ch/huawei-obs-client"
+keywords = ["huawei", "obs", "s3", "object-storage", "cloud"]
+categories = ["api-bindings", "web-programming"]
+readme = "README.md"
+
+[dependencies]
+# S3 SDKs
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1"
+rust-s3 = { version = "0.37", default-features = false, features = ["tokio", "tokio-rustls-tls"] }
+
+# Async
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util"] }
+# Error handling
+thiserror = "1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Checksums (required by Huawei OBS for Content-MD5 headers)
+md-5 = "0.10"
+base64 = "0.22"
+
+# HTTP
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+bytes = "1"
+chrono = "0.4"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-test = "0.4"
+tempfile = "3"
