@@ -2,7 +2,7 @@
 //!
 //! A Rust client library for **Huawei OBS** (Object Storage Service), which is
 //! S3-compatible. Provides a clean, async API for bucket and object operations,
-//! lifecycle rules, CORS, bucket policies, and Object Lock (WORM).
+//! lifecycle rules, CORS, bucket policies, versioning, and Object Lock (WORM).
 //!
 //! ## Quick Start
 //!
@@ -51,6 +51,7 @@
 //! | **Lifecycle** | get, put, delete rules |
 //! | **CORS** | get, put, delete rules (auto Content-MD5) |
 //! | **Policy** | get, put, delete bucket policies |
+//! | **Versioning** | get/set bucket state, list versions, download/delete/copy a version |
 //! | **Object Lock** | get/set configuration, get/set object retention |
 //!
 //! ## Error Handling

@@ -1104,6 +1104,272 @@ impl ObsClient {
     }
 }
 
+// ─── Versioning ──────────────────────────────────────────────────────────────
+
+impl ObsClient {
+    /// Convert an SDK timestamp into a [`SystemTime`].
+    fn system_time_from(dt: &aws_sdk_s3::primitives::DateTime) -> Option<SystemTime> {
+        SystemTime::UNIX_EPOCH.checked_add(
+            std::time::Duration::from_secs(dt.secs() as u64)
+                + std::time::Duration::from_nanos(dt.subsec_nanos() as u64),
+        )
+    }
+
+    /// Get the versioning state of a bucket.
+    pub async fn get_bucket_versioning(&self, bucket_name: &str) -> Result<VersioningStatus> {
+        use aws_sdk_s3::types::BucketVersioningStatus;
+
+        let client = self.get_aws_client().await?;
+
+        let output = client
+            .get_bucket_versioning()
+            .bucket(bucket_name)
+            .send()
+            .await
+            .map_err(|e| ObsError::AwsSdk(format!("Failed to get bucket versioning: {:?}", e)))?;
+
+        // A bucket that never had versioning configured returns no status element at all —
+        // that is a different state from Suspended and callers need to tell them apart.
+        Ok(match output.status() {
+            Some(BucketVersioningStatus::Enabled) => VersioningStatus::Enabled,
+            Some(BucketVersioningStatus::Suspended) => VersioningStatus::Suspended,
+            _ => VersioningStatus::NotConfigured,
+        })
+    }
+
+    /// Enable or suspend versioning on a bucket.
+    ///
+    /// Automatically computes the `Content-MD5` header required by Huawei OBS.
+    pub async fn put_bucket_versioning(
+        &self,
+        bucket_name: &str,
+        status: VersioningStatus,
+    ) -> Result<()> {
+        use aws_sdk_s3::types::{BucketVersioningStatus, VersioningConfiguration};
+        use base64::Engine;
+        use md5::{Digest, Md5};
+
+        let aws_status = match status {
+            VersioningStatus::Enabled => BucketVersioningStatus::Enabled,
+            VersioningStatus::Suspended => BucketVersioningStatus::Suspended,
+            VersioningStatus::NotConfigured => {
+                return Err(ObsError::InvalidConfig(
+                    "versioning can only be set to Enabled or Suspended".to_string(),
+                ))
+            }
+        };
+
+        let client = self.get_aws_client().await?;
+
+        client
+            .put_bucket_versioning()
+            .bucket(bucket_name)
+            .versioning_configuration(
+                VersioningConfiguration::builder().status(aws_status).build(),
+            )
+            .customize()
+            .mutate_request(|req| {
+                if let Some(body_bytes) = req.body().bytes() {
+                    let digest = Md5::digest(body_bytes);
+                    let md5_b64 = base64::engine::general_purpose::STANDARD.encode(digest);
+                    req.headers_mut().insert("content-md5", md5_b64);
+                }
+            })
+            .send()
+            .await
+            .map_err(|e| ObsError::AwsSdk(format!("Failed to set bucket versioning: {:?}", e)))?;
+
+        Ok(())
+    }
+
+    /// List every version of the matching keys, including delete markers.
+    pub async fn list_object_versions(
+        &self,
+        bucket_name: &str,
+        options: VersionListOptions,
+    ) -> Result<VersionListResult> {
+        let client = self.get_aws_client().await?;
+
+        let mut request = client.list_object_versions().bucket(bucket_name);
+
+        if let Some(prefix) = options.prefix {
+            request = request.prefix(prefix);
+        }
+        if let Some(delimiter) = options.delimiter {
+            request = request.delimiter(delimiter);
+        }
+        if let Some(max_keys) = options.max_keys {
+            request = request.max_keys(max_keys);
+        }
+        if let Some(key_marker) = options.key_marker {
+            request = request.key_marker(key_marker);
+        }
+        if let Some(version_id_marker) = options.version_id_marker {
+            request = request.version_id_marker(version_id_marker);
+        }
+
+        let output = request
+            .send()
+            .await
+            .map_err(|e| ObsError::AwsSdk(format!("Failed to list object versions: {:?}", e)))?;
+
+        let mut versions: Vec<ObjectVersion> = output
+            .versions()
+            .iter()
+            .map(|v| ObjectVersion {
+                key: v.key().unwrap_or_default().to_string(),
+                version_id: v.version_id().unwrap_or("null").to_string(),
+                is_latest: v.is_latest().unwrap_or(false),
+                is_delete_marker: false,
+                last_modified: v.last_modified().and_then(Self::system_time_from),
+                size: v.size().map(|s| s as u64),
+                etag: v.e_tag().map(|e| e.to_string()),
+                storage_class: v.storage_class().map(|c| c.as_str().to_string()),
+            })
+            .collect();
+
+        // Delete markers come back in a separate array; fold them into the same history so
+        // callers see one chronological list per key.
+        versions.extend(output.delete_markers().iter().map(|m| ObjectVersion {
+            key: m.key().unwrap_or_default().to_string(),
+            version_id: m.version_id().unwrap_or("null").to_string(),
+            is_latest: m.is_latest().unwrap_or(false),
+            is_delete_marker: true,
+            last_modified: m.last_modified().and_then(Self::system_time_from),
+            size: None,
+            etag: None,
+            storage_class: None,
+        }));
+
+        // Group by key, newest first within each key.
+        versions.sort_by(|a, b| {
+            a.key
+                .cmp(&b.key)
+                .then(b.last_modified.cmp(&a.last_modified))
+        });
+
+        let common_prefixes = output
+            .common_prefixes()
+            .iter()
+            .filter_map(|cp| cp.prefix().map(|p| p.to_string()))
+            .collect();
+
+        Ok(VersionListResult {
+            versions,
+            common_prefixes,
+            is_truncated: output.is_truncated().unwrap_or(false),
+            next_key_marker: output.next_key_marker().map(|m| m.to_string()),
+            next_version_id_marker: output.next_version_id_marker().map(|m| m.to_string()),
+        })
+    }
+
+    /// Download one specific version of an object.
+    pub async fn download_object_version(
+        &self,
+        bucket_name: &str,
+        key: &str,
+        version_id: &str,
+    ) -> Result<Bytes> {
+        let client = self.get_aws_client().await?;
+
+        let output = client
+            .get_object()
+            .bucket(bucket_name)
+            .key(key)
+            .version_id(version_id)
+            .send()
+            .await
+            .map_err(|e| ObsError::AwsSdk(format!("Failed to download object version: {:?}", e)))?;
+
+        let data = output
+            .body
+            .collect()
+            .await
+            .map_err(|e| ObsError::AwsSdk(format!("Failed to read object version body: {:?}", e)))?;
+
+        Ok(data.into_bytes())
+    }
+
+    /// Permanently delete one specific version of an object.
+    ///
+    /// Unlike [`delete_object`](Self::delete_object) on a versioned bucket, this does not
+    /// leave a delete marker behind — the version is gone.
+    pub async fn delete_object_version(
+        &self,
+        bucket_name: &str,
+        key: &str,
+        version_id: &str,
+    ) -> Result<()> {
+        let client = self.get_aws_client().await?;
+
+        client
+            .delete_object()
+            .bucket(bucket_name)
+            .key(key)
+            .version_id(version_id)
+            .send()
+            .await
+            .map_err(|e| ObsError::AwsSdk(format!("Failed to delete object version: {:?}", e)))?;
+
+        Ok(())
+    }
+
+    /// Server-side copy of one specific version of an object.
+    ///
+    /// Copying an old version onto its own key is how a version is restored: it becomes the
+    /// new current version and the history is left intact.
+    pub async fn copy_object_version(
+        &self,
+        source_bucket: &str,
+        source_key: &str,
+        version_id: &str,
+        dest_bucket: &str,
+        dest_key: &str,
+    ) -> Result<()> {
+        let client = self.get_aws_client().await?;
+
+        // CopySource carries the version as a query parameter.
+        let copy_source = format!(
+            "{}/{}?versionId={}",
+            source_bucket,
+            urlencode_key(source_key),
+            version_id
+        );
+
+        client
+            .copy_object()
+            .bucket(dest_bucket)
+            .key(dest_key)
+            .copy_source(copy_source)
+            .send()
+            .await
+            .map_err(|e| ObsError::AwsSdk(format!("Failed to copy object version: {:?}", e)))?;
+
+        Ok(())
+    }
+}
+
+/// Percent-encode the parts of a key that would otherwise break a `CopySource` header.
+fn urlencode_key(key: &str) -> String {
+    key.split('/')
+        .map(|segment| {
+            segment
+                .chars()
+                .map(|c| match c {
+                    'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
+                    other => other
+                        .to_string()
+                        .as_bytes()
+                        .iter()
+                        .map(|b| format!("%{:02X}", b))
+                        .collect::<String>(),
+                })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 // ─── Object Lock / WORM ─────────────────────────────────────────────────────
 
 impl ObsClient {

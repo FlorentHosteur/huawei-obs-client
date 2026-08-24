@@ -82,6 +82,82 @@ pub struct ListResult {
     pub next_continuation_token: Option<String>,
 }
 
+/// Versioning state of a bucket.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VersioningStatus {
+    /// Every write creates a new version.
+    Enabled,
+    /// Existing versions are kept, new writes overwrite the `null` version.
+    Suspended,
+    /// Versioning has never been configured on this bucket.
+    NotConfigured,
+}
+
+impl VersioningStatus {
+    /// Human-readable label.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Enabled => "Enabled",
+            Self::Suspended => "Suspended",
+            Self::NotConfigured => "Not configured",
+        }
+    }
+}
+
+/// One version of an object, or a delete marker.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObjectVersion {
+    /// Object key (path).
+    pub key: String,
+    /// Version identifier. `"null"` for objects written while versioning was suspended.
+    pub version_id: String,
+    /// Whether this is the current version of the key.
+    pub is_latest: bool,
+    /// Whether this entry is a delete marker rather than real content.
+    pub is_delete_marker: bool,
+    /// Last modification time.
+    pub last_modified: Option<SystemTime>,
+    /// Size in bytes. Always `None` for delete markers.
+    pub size: Option<u64>,
+    /// ETag (content hash). Always `None` for delete markers.
+    pub etag: Option<String>,
+    /// Storage class (e.g. STANDARD, WARM, COLD).
+    pub storage_class: Option<String>,
+}
+
+/// Options for listing object versions.
+///
+/// Paging differs from [`ListOptions`]: `ListObjectVersions` returns a *pair* of markers
+/// rather than a single continuation token, and both must be echoed back to get the next page.
+#[derive(Debug, Clone, Default)]
+pub struct VersionListOptions {
+    /// Only return versions of keys with this prefix.
+    pub prefix: Option<String>,
+    /// Delimiter for grouping (typically `"/"`).
+    pub delimiter: Option<String>,
+    /// Maximum number of versions to return.
+    pub max_keys: Option<i32>,
+    /// Key to resume listing from.
+    pub key_marker: Option<String>,
+    /// Version id to resume listing from, within `key_marker`.
+    pub version_id_marker: Option<String>,
+}
+
+/// Result of listing object versions.
+#[derive(Debug, Clone)]
+pub struct VersionListResult {
+    /// Versions and delete markers, newest first within each key.
+    pub versions: Vec<ObjectVersion>,
+    /// Common prefixes (virtual directories) when using a delimiter.
+    pub common_prefixes: Vec<String>,
+    /// Whether more results are available.
+    pub is_truncated: bool,
+    /// Key marker to pass back for the next page.
+    pub next_key_marker: Option<String>,
+    /// Version id marker to pass back for the next page.
+    pub next_version_id_marker: Option<String>,
+}
+
 /// Tag filter used in lifecycle rules.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LifecycleTag {
